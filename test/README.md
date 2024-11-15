@@ -1,10 +1,9 @@
 # Multi-Region Consul Federation Tests
 
-This directory contains Python-based tests for validating the multi-region Consul federation infrastructure.
+This directory contains tests for the AWS Multi-Region Consul Federation infrastructure.
 
 ## Prerequisites
 
-- Python 3.8+
 - AWS credentials configured
 - kubectl configured with EKS cluster access
 - Helm 3.0+
@@ -19,54 +18,76 @@ pip install -r requirements.txt
 
 ## Test Structure
 
-- `conftest.py`: Common test fixtures and configurations
-- `test_consul.py`: Consul deployment and functionality tests
-- `test_s3.py`: S3 backup infrastructure tests
-- `test_monitoring.py`: Monitoring stack tests
+```
+test/
+├── terraform/              # Terraform native tests
+│   ├── eks.tftest.hcl     # EKS cluster tests
+│   └── consul-federation.tftest.hcl  # Federation tests
+└── manifests/             # Kubernetes test manifests
+    ├── cross-dc-services.yaml
+    └── test-services.yaml
+```
+
+## Test Types
+
+### Infrastructure Tests
+Infrastructure testing is done using Terraform's native testing framework. These tests verify:
+- Resource creation and configuration
+- Module inputs and outputs
+- Infrastructure relationships and dependencies
+
+### Integration Tests
+Integration testing is performed using shell scripts that verify:
+- Consul federation functionality
+- Backup and restore operations
+- Service mesh communication
+- Cross-DC service discovery
 
 ## Running Tests
 
-Run all tests:
+### Prerequisites
+- AWS CLI configured with appropriate credentials
+- Terraform >= 1.5.0
+- kubectl configured with cluster access
+
+### Running Terraform Tests
 ```bash
-pytest -v
+# Run all Terraform tests
+terraform test
+
+# Run specific test file
+terraform test terraform/eks.tftest.hcl
 ```
 
-Run specific test suite:
+### Running Integration Tests
 ```bash
-pytest test_consul.py -v
-pytest test_s3.py -v
-pytest test_monitoring.py -v
-```
+# Test backup functionality
+./scripts/test-backup.sh
 
-Run tests for specific region:
-```bash
-pytest --region us-west-2 -v
+# Test federation functionality
+./scripts/test-federation.sh
 ```
 
 ## Test Coverage
 
-### Consul Tests
-- Server deployment verification
-- Mesh gateway functionality
-- Basic connectivity tests
+The test suite covers:
+1. Infrastructure Deployment
+   - EKS cluster creation
+   - Consul federation setup
+   - Network configuration
+   - Security settings
 
-### S3 Tests
-- Bucket encryption
-- Versioning configuration
-- Public access blocks
+2. Operational Features
+   - Backup and restore
+   - Cross-DC communication
+   - Service discovery
+   - Monitoring integration
 
-### Monitoring Tests
-- Prometheus deployment
-- Critical CloudWatch alarms
-- Basic metrics collection
-
-## Configuration
-
-Tests can be configured using the following environment variables:
-- `AWS_ACCESS_KEY_ID`: AWS access key
-- `AWS_SECRET_ACCESS_KEY`: AWS secret key
-- `AWS_SESSION_TOKEN`: AWS session token (if using temporary credentials)
-- `KUBECONFIG`: Path to Kubernetes config file
+3. Security
+   - TLS configuration
+   - ACL system
+   - Network policies
+   - IAM roles
 
 ## Best Practices
 
