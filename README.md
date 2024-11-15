@@ -49,21 +49,18 @@ This infrastructure deploys a secure, highly available Consul federation across 
 ```
 .
 ├── modules/                    # Reusable Terraform modules
-│   ├── eks/                   # EKS cluster and node groups
-│   ├── networking/            # VPC and network components
-│   ├── consul/                # Consul deployment and configuration
-│   ├── security/              # Security configurations and policies
-│   └── monitoring/            # Monitoring and observability stack
-├── environments/              # Environment-specific configurations
-│   ├── us-west-2/            # Primary datacenter (Oregon)
-│   └── us-east-1/            # Secondary datacenter (Virginia)
-├── kubernetes/               # Kubernetes manifests
-│   ├── consul/              # Consul Kubernetes configurations
-│   └── monitoring/          # Monitoring stack configurations
-├── tests/                   # Test configurations
-│   ├── terraform/           # Terraform validation tests
-│   └── integration/         # Integration test suite
-└── .github/                 # GitHub Actions workflows
+│   ├── consul/                # Base Consul installation and AWS integration
+│   ├── consul-federation/     # Consul federation specific configurations
+│   ├── eks/                   # EKS cluster management
+│   ├── monitoring/           # Monitoring stack (Prometheus, Grafana)
+│   ├── networking/           # VPC and network configurations
+│   └── security/             # Security configurations and policies
+├── docs/                      # Documentation
+├── examples/                  # Example configurations
+├── test/                     # Test suites
+├── main.tf                   # Root module configuration
+├── variables.tf              # Input variables
+└── versions.tf               # Version constraints
 ```
 
 ## Prerequisites
