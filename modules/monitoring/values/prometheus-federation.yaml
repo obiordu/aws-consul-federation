@@ -1,0 +1,181 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: ${cluster_name}
+    environment: ${environment}
+
+prometheus:
+  prometheusSpec:
+    replicas: 2
+    retention: 15d
+    replicaExternalLabelName: prometheus_replica
+    ruleSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    enableAdminAPI: false
+    
+    resources:
+      requests:
+        cpu: 1
+        memory: 2Gi
+      limits:
+        cpu: 2
+        memory: 4Gi
+
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+    additionalScrapeConfigs:
+      - job_name: 'consul-servers'
+        consul_sd_configs:
+          - server: 'consul-server:8500'
+            services: ['consul']
+        relabel_configs:
+          - source_labels: [__meta_consul_node]
+            target_label: node
+          - source_labels: [__meta_consul_dc]
+            target_label: datacenter
+
+      - job_name: 'consul-services'
+        consul_sd_configs:
+          - server: 'consul-server:8500'
+            services: []
+        relabel_configs:
+          - source_labels: [__meta_consul_service]
+            target_label: service
+          - source_labels: [__meta_consul_node]
+            target_label: node
+          - source_labels: [__meta_consul_dc]
+            target_label: datacenter
+
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - prometheus
+            topologyKey: kubernetes.io/hostname
+
+    securityContext:
+      fsGroup: 65534
+      runAsGroup: 65534
+      runAsNonRoot: true
+      runAsUser: 65534
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    replicas: 2
+    retention: 120h
+    
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - alertmanager
+            topologyKey: kubernetes.io/hostname
+
+grafana:
+  enabled: true
+  replicas: 2
+  
+  persistence:
+    type: pvc
+    enabled: true
+    storageClassName: gp3
+    size: 10Gi
+    
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  serviceMonitor:
+    enabled: true
+    
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'default'
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+  dashboards:
+    default:
+      consul-federation:
+        file: dashboards/consul-federation.json
+      service-mesh:
+        file: dashboards/service-mesh-traffic.json
+
+  adminUser: admin
+  adminPassword: ${grafana_admin_password}
+
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - grafana.${domain_name}
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.${domain_name}
+
+nodeExporter:
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+kubeStateMetrics:
+  enabled: true

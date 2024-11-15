@@ -1,0 +1,74 @@
+groups:
+  - name: consul.rules
+    rules:
+    - alert: ConsulLeaderLoss
+      expr: sum(consul_raft_leader) by (datacenter) == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Consul cluster {{ $labels.datacenter }} has no leader"
+        description: "The Consul cluster in datacenter {{ $labels.datacenter }} has no leader for more than 1 minute"
+
+    - alert: ConsulHighRPCRate
+      expr: rate(consul_rpc_requests[5m]) > 1000
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High RPC rate in Consul cluster"
+        description: "RPC request rate is above 1000 req/s for 5 minutes"
+
+    - alert: ConsulMemberLoss
+      expr: delta(consul_serf_members[10m]) < 0
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Consul member count decreased"
+        description: "Consul cluster has lost members in the last 10 minutes"
+
+    - alert: ConsulMeshGatewayHighLatency
+      expr: histogram_quantile(0.95, rate(consul_mesh_gateway_connect_latency_ms_bucket[5m])) > 100
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High Mesh Gateway latency"
+        description: "95th percentile of Mesh Gateway connection latency is above 100ms"
+
+    - alert: ConsulACLTokenExpiry
+      expr: consul_acl_token_count < 10
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "Low ACL token count"
+        description: "Number of valid ACL tokens is below 10"
+
+    - alert: ConsulHighMemoryUsage
+      expr: process_resident_memory_bytes{job="consul"} > 2e9
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage in Consul"
+        description: "Consul process is using more than 2GB of memory"
+
+    - alert: ConsulServiceHealthCheckFailure
+      expr: consul_health_service_status{status="critical"} > 0
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Service health check failing"
+        description: "One or more services have failing health checks"
+
+    - alert: ConsulCrossRegionLatency
+      expr: histogram_quantile(0.95, rate(consul_federation_rtt_seconds_bucket[5m])) > 0.5
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High cross-region latency"
+        description: "95th percentile of cross-region request latency is above 500ms"

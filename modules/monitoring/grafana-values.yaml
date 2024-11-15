@@ -1,0 +1,72 @@
+grafana:
+  enabled: true
+  persistence:
+    type: pvc
+    enabled: true
+    size: 10Gi
+    storageClassName: gp2
+  
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards
+
+  dashboards:
+    default:
+      consul-federation:
+        json: |
+          ${consul_dashboard}
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-server
+          access: proxy
+          isDefault: true
+          editable: true
+
+  resources:
+    requests:
+      memory: 100Mi
+      cpu: 100m
+    limits:
+      memory: 200Mi
+      cpu: 200m
+
+  serviceMonitor:
+    enabled: true
+
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
+  adminUser: admin
+  adminPassword: ${admin_password}
+
+  service:
+    type: LoadBalancer
+    port: 80
+
+  ingress:
+    enabled: true
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - grafana.${domain_name}
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.${domain_name}

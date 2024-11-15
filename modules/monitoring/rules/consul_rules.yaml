@@ -1,0 +1,94 @@
+groups:
+  - name: consul.rules
+    rules:
+    - record: consul:raft_leader:count
+      expr: sum(consul_raft_leader)
+    
+    - record: consul:up:count
+      expr: count(consul_up == 1)
+    
+    - record: consul:peers:count
+      expr: consul_raft_peers
+    
+    - record: consul:service:healthy:ratio
+      expr: |
+        sum(consul_catalog_service_node_healthy) by (service_name)
+        /
+        count(consul_catalog_service_node_healthy) by (service_name)
+    
+    - record: consul:service:instances:count
+      expr: count(consul_catalog_service_node_healthy) by (service_name)
+
+  - name: consul.alerts
+    rules:
+    - alert: ConsulNoLeader
+      expr: sum(consul_raft_leader) == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: Consul cluster has no leader
+        description: The Consul cluster has no leader elected for more than 1 minute.
+
+    - alert: ConsulHighLatency
+      expr: consul_raft_leader_lastcontact_max > 200
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: High latency between Consul servers
+        description: Consul servers are experiencing high latency (>200ms) for more than 5 minutes.
+
+    - alert: ConsulServerDown
+      expr: consul_up == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: Consul server is down
+        description: A Consul server has been down for more than 1 minute.
+
+    - alert: ConsulLowPeerCount
+      expr: consul_raft_peers < 3
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: Insufficient Consul peers
+        description: The Consul cluster has fewer than 3 peers, which may impact availability.
+
+    - alert: ConsulServiceDegraded
+      expr: consul:service:healthy:ratio < 0.75
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: Consul service health degraded
+        description: More than 25% of service instances are unhealthy.
+
+    - alert: ConsulHighCPU
+      expr: rate(process_cpu_seconds_total{job="consul"}[5m]) > 0.8
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: High CPU usage on Consul server
+        description: Consul server is using more than 80% CPU for 5 minutes.
+
+    - alert: ConsulHighMemory
+      expr: process_resident_memory_bytes{job="consul"} / process_resident_memory_bytes{job="consul"} offset 1h > 1.5
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: High memory usage on Consul server
+        description: Consul server memory usage has increased by 50% in the last hour.
+
+    - alert: ConsulTooManyWANRetries
+      expr: increase(consul_serf_wan_events_total{event="retry"}[5m]) > 10
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: High number of WAN retries
+        description: Consul is experiencing a high number of WAN gossip retries, which may indicate network issues.

@@ -1,0 +1,114 @@
+global:
+  name: consul
+  datacenter: ${datacenter}
+  domain: ${domain}
+  image: "hashicorp/consul:1.16"
+  enableConsulNamespaces: true
+  tls:
+    enabled: true
+    enableAutoEncrypt: true
+    verify: true
+    httpsOnly: true
+    caCert:
+      secretName: consul-certs
+      secretKey: ca.pem
+    serverCert:
+      secretName: consul-certs
+      secretKey: server.pem
+    serverKey:
+      secretName: consul-certs
+      secretKey: server-key.pem
+  gossipEncryption:
+    secretName: consul-gossip
+    secretKey: gossip.key
+  federation:
+    enabled: true
+    primaryDatacenter: primary
+  metrics:
+    enabled: true
+    enableAgentMetrics: true
+    agentMetricsRetentionTime: "1h"
+    enableGatewayMetrics: true
+    enableGatewayMetricsRetentionTime: "1h"
+
+server:
+  replicas: ${replicas}
+  bootstrapExpect: ${replicas}
+  extraConfig: |
+    {
+      "primary_datacenter": "primary",
+      "primary_gateways": ${primary ? "[]" : retry_join},
+      "connect": {
+        "enabled": true,
+        "enable_mesh_gateway_wan_federation": true
+      },
+      "auto_encrypt": {
+        "allow_tls": true
+      },
+      "telemetry": {
+        "prometheus_retention_time": "1h"
+      }
+    }
+  resources:
+    requests:
+      memory: "1Gi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "1000m"
+  storage:
+    enabled: true
+    storageClass: ${storage_class}
+    size: 10Gi
+
+client:
+  enabled: true
+  grpc: true
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "300Mi"
+      cpu: "200m"
+
+connectInject:
+  enabled: true
+  default: true
+  transparentProxy:
+    defaultEnabled: true
+  metrics:
+    defaultEnabled: true
+    defaultEnableMerging: true
+
+controller:
+  enabled: true
+
+meshGateway:
+  enabled: true
+  replicas: 2
+  service:
+    type: LoadBalancer
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "300Mi"
+      cpu: "200m"
+
+prometheus:
+  enabled: true
+
+ui:
+  enabled: true
+  service:
+    type: LoadBalancer
+  metrics:
+    enabled: true
+    provider: "prometheus"
+    baseURL: http://prometheus-server
+
+acls:
+  manageSystemACLs: true
+  createReplicationToken: true

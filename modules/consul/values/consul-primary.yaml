@@ -1,0 +1,143 @@
+global:
+  name: consul
+  datacenter: us-west-2
+  image: "hashicorp/consul:1.16.0"
+  enableConsulNamespaces: true
+  adminPartitions:
+    enabled: true
+    name: "default"
+  federation:
+    enabled: true
+    primaryDatacenter: true
+    k8sAuthMethodHost: ${eks_cluster_endpoint}
+    createFederationSecret: true
+
+server:
+  replicas: 3
+  bootstrapExpect: 3
+  extraConfig: |
+    {
+      "primary_datacenter": "us-west-2",
+      "primary_gateways": [
+        {
+          "address": "consul-mesh-gateway.us-west-2.consul",
+          "port": 443
+        }
+      ],
+      "connect": {
+        "enable_mesh_gateway_wan_federation": true
+      }
+    }
+  storage:
+    storageClass: gp3
+    size: 25Gi
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    fsGroup: 1000
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: consul
+              component: server
+          topologyKey: kubernetes.io/hostname
+
+connectInject:
+  enabled: true
+  default: true
+  transparentProxy:
+    defaultEnabled: true
+  metrics:
+    defaultEnabled: true
+    enableGatewayMetrics: true
+    defaultEnableMerging: true
+    defaultPrometheusScrapePort: 20100
+    defaultPrometheusScrapePath: "/metrics"
+
+meshGateway:
+  enabled: true
+  replicas: 2
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: consul
+              component: mesh-gateway
+          topologyKey: kubernetes.io/hostname
+
+ingressGateways:
+  enabled: true
+  defaults:
+    replicas: 2
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+        service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app: consul
+                component: ingress-gateway
+            topologyKey: kubernetes.io/hostname
+
+ui:
+  enabled: true
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false  # We're using AWS ALB Ingress Controller instead
+
+tls:
+  enabled: true
+  enableAutoEncrypt: true
+  verify: true
+  httpsOnly: true
+  caCert:
+    secretName: ${consul_ca_secret}
+    secretKey: ca.crt
+  caKey:
+    secretName: ${consul_ca_secret}
+    secretKey: ca.key
+
+gossipEncryption:
+  secretName: ${consul_gossip_secret}
+  secretKey: key
+
+acls:
+  manageSystemACLs: true
+  createReplicationToken: true
+  bootstrapToken:
+    secretName: ${consul_bootstrap_token_secret}
+    secretKey: token

@@ -1,0 +1,183 @@
+name: 'Terraform CI/CD'
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - '**.tf'
+      - '**.tfvars'
+      - '.github/workflows/terraform.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - '**.tf'
+      - '**.tfvars'
+      - '.github/workflows/terraform.yml'
+
+env:
+  TF_IN_AUTOMATION: true
+  AWS_DEFAULT_REGION: us-west-2
+
+jobs:
+  validate:
+    name: 'Validate'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: "1.5.0"
+        terraform_wrapper: false
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+
+    - name: Terraform Format
+      run: terraform fmt -check -recursive
+      
+    - name: Terraform Init
+      run: terraform init -backend=false
+
+    - name: Terraform Validate
+      run: terraform validate
+
+    - name: Run tfsec
+      uses: aquasecurity/tfsec-action@v1.0.0
+      with:
+        additional_args: --minimum-severity HIGH
+
+    - name: Run Checkov
+      uses: bridgecrewio/checkov-action@master
+      with:
+        directory: .
+        framework: terraform
+        skip_check: CKV_AWS_79,CKV_AWS_126
+        quiet: true
+        soft_fail: false
+
+  test:
+    name: 'Test'
+    needs: validate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.20'
+
+    - name: Run Terratest
+      working-directory: test/terraform
+      run: |
+        go mod download
+        go test -v -timeout 30m
+
+  plan:
+    name: 'Plan'
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    strategy:
+      matrix:
+        environment: [dev, stage, prod]
+        
+    environment: ${{ matrix.environment }}
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: "1.5.0"
+        terraform_wrapper: false
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        role-duration-seconds: 1200
+
+    - name: Terraform Init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+          -backend-config="key=${{ matrix.environment }}/terraform.tfstate" \
+          -backend-config="region=us-west-2"
+
+    - name: Terraform Plan
+      run: |
+        terraform plan \
+          -var-file="environments/${{ matrix.environment }}/terraform.tfvars" \
+          -out=tfplan
+      
+    - name: Upload Plan
+      uses: actions/upload-artifact@v3
+      with:
+        name: tfplan-${{ matrix.environment }}
+        path: tfplan
+        retention-days: 1
+
+  apply:
+    name: 'Apply'
+    needs: [validate, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    
+    strategy:
+      matrix:
+        environment: [dev, stage, prod]
+        
+    environment: ${{ matrix.environment }}
+    concurrency: ${{ matrix.environment }}
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: "1.5.0"
+        terraform_wrapper: false
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-west-2
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        role-duration-seconds: 1200
+
+    - name: Terraform Init
+      run: |
+        terraform init \
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+          -backend-config="key=${{ matrix.environment }}/terraform.tfstate" \
+          -backend-config="region=us-west-2"
+
+    - name: Terraform Apply
+      run: |
+        terraform apply \
+          -var-file="environments/${{ matrix.environment }}/terraform.tfvars" \
+          -auto-approve
+
+    - name: Run Health Check
+      run: |
+        chmod +x scripts/health_check.sh
+        PRIMARY_CONSUL_ADDR=$(terraform output -raw primary_consul_endpoint) \
+        SECONDARY_CONSUL_ADDR=$(terraform output -raw secondary_consul_endpoint) \
+        BACKUP_BUCKET=$(terraform output -raw backup_bucket) \
+        ./scripts/health_check.sh

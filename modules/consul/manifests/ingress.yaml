@@ -1,0 +1,162 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: alb
+  annotations:
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: ingress.k8s.aws/alb
+
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: ${admin_email}
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+      - http01:
+          ingress:
+            class: alb
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: consul-ui
+  namespace: consul
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: ${acm_certificate_arn}
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS-1-2-2017-01
+    alb.ingress.kubernetes.io/healthcheck-path: /v1/status/leader
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTPS
+    alb.ingress.kubernetes.io/backend-protocol: HTTPS
+    alb.ingress.kubernetes.io/group.name: consul
+    external-dns.alpha.kubernetes.io/hostname: consul-ui.${domain_name}
+spec:
+  ingressClassName: alb
+  rules:
+    - host: consul-ui.${domain_name}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: consul-ui
+                port:
+                  number: 443
+
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: ingress-gateway
+spec:
+  protocol: "http"
+
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceRouter
+metadata:
+  name: ingress-gateway
+spec:
+  routes:
+    - match:
+        http:
+          pathPrefix: "/api"
+      destination:
+        service: api-service
+        prefix: "/api"
+        namespace: default
+    - match:
+        http:
+          pathPrefix: "/"
+      destination:
+        service: web-service
+        namespace: default
+
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ProxyDefaults
+metadata:
+  name: global
+spec:
+  protocol: http
+  envoyExtrasConfig:
+    envoy_prometheus_bind_addr: "0.0.0.0:20200"
+  config:
+    protocol: http
+    envoy_prometheus_bind_addr: "0.0.0.0:20200"
+    envoy_extra_static_clusters_json: |
+      {
+        "connect_timeout": "3s",
+        "dns_lookup_family": "V4_ONLY",
+        "lb_policy": "ROUND_ROBIN",
+        "load_assignment": {
+          "cluster_name": "self_admin",
+          "endpoints": [
+            {
+              "lb_endpoints": [
+                {
+                  "endpoint": {
+                    "address": {
+                      "socket_address": {
+                        "address": "127.0.0.1",
+                        "port_value": 19000
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "name": "self_admin",
+        "type": "STATIC"
+      }
+
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: ingress-gateway
+spec:
+  destination:
+    name: ingress-gateway
+  sources:
+    - name: web-service
+      action: allow
+    - name: api-service
+      action: allow
+
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceSplitter
+metadata:
+  name: web-service
+spec:
+  splits:
+    - weight: 100
+      service: web-service
+      serviceSubset: v1
+
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceResolver
+metadata:
+  name: web-service
+spec:
+  defaultSubset: v1
+  subsets:
+    v1:
+      filter: "Service.Meta.version == v1"
+    v2:
+      filter: "Service.Meta.version == v2"

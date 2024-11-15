@@ -1,0 +1,135 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dc1-service
+  namespace: consul-test
+  annotations:
+    consul.hashicorp.com/connect-inject: "true"
+spec:
+  selector:
+    app: dc1-service
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dc1-service
+  namespace: consul-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dc1-service
+  template:
+    metadata:
+      labels:
+        app: dc1-service
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service-upstreams: "dc2-service.dc2:9090"
+    spec:
+      containers:
+        - name: dc1-service
+          image: nicholasjackson/fake-service:v0.21.0
+          env:
+            - name: LISTEN_ADDR
+              value: "0.0.0.0:8080"
+            - name: UPSTREAM_URIS
+              value: "http://localhost:9090"
+            - name: NAME
+              value: "dc1-service"
+            - name: MESSAGE
+              value: "Hello from DC1"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dc2-service
+  namespace: consul-test
+  annotations:
+    consul.hashicorp.com/connect-inject: "true"
+spec:
+  selector:
+    app: dc2-service
+  ports:
+    - port: 80
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dc2-service
+  namespace: consul-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dc2-service
+  template:
+    metadata:
+      labels:
+        app: dc2-service
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+    spec:
+      containers:
+        - name: dc2-service
+          image: nicholasjackson/fake-service:v0.21.0
+          env:
+            - name: LISTEN_ADDR
+              value: "0.0.0.0:9090"
+            - name: NAME
+              value: "dc2-service"
+            - name: MESSAGE
+              value: "Hello from DC2"
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: dc1-service
+  namespace: consul-test
+spec:
+  protocol: "http"
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: dc2-service
+  namespace: consul-test
+spec:
+  protocol: "http"
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: dc1-to-dc2
+  namespace: consul-test
+spec:
+  destination:
+    name: dc2-service
+  sources:
+    - name: dc1-service
+      action: allow
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ExportedServices
+metadata:
+  name: default
+  namespace: consul-test
+spec:
+  services:
+    - name: dc2-service
+      consumers:
+        - peer: dc1
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceResolver
+metadata:
+  name: dc2-service
+  namespace: consul-test
+spec:
+  redirect:
+    service: dc2-service
+    datacenter: dc2

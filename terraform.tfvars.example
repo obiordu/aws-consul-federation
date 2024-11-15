@@ -1,0 +1,18 @@
+# Environment name
+environment = "dev"
+
+# AWS regions
+regions = {
+  primary   = "us-west-2"  # Oregon
+  secondary = "us-east-1"  # Virginia
+}
+
+# Domain name for Consul
+domain_name = "consul.example.com"
+
+# VPC CIDR blocks
+primary_vpc_cidr   = "10.0.0.0/16"
+secondary_vpc_cidr = "10.1.0.0/16"
+
+# Consul version
+consul_version = "1.16.0"

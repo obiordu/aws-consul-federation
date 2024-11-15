@@ -1,0 +1,110 @@
+name: Consul Integration Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  PRIMARY_REGION: "us-west-2"
+  SECONDARY_REGION: "us-east-1"
+
+jobs:
+  integration-tests:
+    name: Run Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.PRIMARY_REGION }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig --region $PRIMARY_REGION --name primary-cluster
+          aws eks update-kubeconfig --region $SECONDARY_REGION --name secondary-cluster --alias secondary
+
+      - name: Install test dependencies
+        run: |
+          curl -fsSL https://get.helm.sh/helm-v3.12.0-linux-amd64.tar.gz | tar xz
+          sudo mv linux-amd64/helm /usr/local/bin/
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+      - name: Run Consul Health Checks
+        run: |
+          chmod +x modules/consul/scripts/test-failover.sh
+          ./modules/consul/scripts/test-failover.sh
+
+      - name: Test Service Discovery
+        run: |
+          # Deploy test services
+          kubectl apply -f test/manifests/test-services.yaml
+          
+          # Wait for services to be ready
+          kubectl wait --for=condition=ready pod -l app=test-service --timeout=120s
+          
+          # Test service discovery
+          kubectl exec deploy/test-client -- curl -s http://test-service.service.consul
+
+      - name: Test Cross-DC Communication
+        run: |
+          # Deploy services in both DCs
+          kubectl apply -f test/manifests/cross-dc-services.yaml
+          kubectl --context secondary apply -f test/manifests/cross-dc-services.yaml
+          
+          # Wait for services
+          kubectl wait --for=condition=ready pod -l app=dc-test --timeout=120s
+          kubectl --context secondary wait --for=condition=ready pod -l app=dc-test --timeout=120s
+          
+          # Test cross-DC communication
+          kubectl exec deploy/dc-test -- curl -s http://dc-test.service.consul
+
+      - name: Test TLS and ACL
+        run: |
+          # Verify TLS is enforced
+          kubectl exec deploy/test-client -- curl -k https://consul-server:8501/v1/status/leader
+          
+          # Test ACL enforcement
+          kubectl exec deploy/test-client -- curl -H "X-Consul-Token: invalid" https://consul-server:8501/v1/agent/services
+
+      - name: Test Metrics and Monitoring
+        run: |
+          # Check Prometheus metrics endpoint
+          kubectl port-forward svc/consul-server 8500:8500 &
+          sleep 5
+          curl -s http://localhost:8500/v1/agent/metrics
+          
+          # Verify Prometheus is scraping Consul metrics
+          kubectl exec -n monitoring deploy/prometheus-server -- curl -s http://localhost:9090/api/v1/query?query=consul_up
+
+      - name: Test Backup and Restore
+        run: |
+          # Create test data
+          kubectl exec deploy/test-client -- consul kv put test/backup-key "test-value"
+          
+          # Trigger backup
+          kubectl create job --from=cronjob/consul-backup manual-backup
+          
+          # Verify backup exists in S3
+          aws s3 ls s3://consul-backup-${PRIMARY_REGION}/
+          
+          # Test restore capability
+          kubectl exec deploy/test-client -- consul kv delete test/backup-key
+          kubectl exec deploy/test-client -- consul snapshot restore /backup/latest.snap
+          
+          # Verify data is restored
+          kubectl exec deploy/test-client -- consul kv get test/backup-key
+
+      - name: Cleanup Test Resources
+        if: always()
+        run: |
+          kubectl delete -f test/manifests/test-services.yaml --ignore-not-found
+          kubectl delete -f test/manifests/cross-dc-services.yaml --ignore-not-found
+          kubectl --context secondary delete -f test/manifests/cross-dc-services.yaml --ignore-not-found

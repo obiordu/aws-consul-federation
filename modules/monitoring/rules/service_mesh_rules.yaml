@@ -1,0 +1,61 @@
+groups:
+  - name: consul.mesh.rules
+    rules:
+    - record: consul:mesh:request_rate
+      expr: |
+        sum(rate(envoy_cluster_upstream_rq_total[5m])) by (consul_source_service, consul_destination_service, datacenter)
+    
+    - record: consul:mesh:error_rate
+      expr: |
+        sum(rate(envoy_cluster_upstream_rq_xx{response_code_class="5"}[5m])) by (consul_source_service, consul_destination_service, datacenter)
+        /
+        sum(rate(envoy_cluster_upstream_rq_total[5m])) by (consul_source_service, consul_destination_service, datacenter)
+    
+    - record: consul:mesh:latency_p95
+      expr: |
+        histogram_quantile(0.95, sum(rate(envoy_cluster_upstream_rq_time_bucket[5m])) by (le, consul_source_service, consul_destination_service, datacenter))
+
+    - record: consul:mesh:cross_region_traffic
+      expr: |
+        sum(rate(envoy_cluster_upstream_rq_total[5m])) by (consul_source_datacenter, consul_destination_datacenter)
+
+  - name: consul.mesh.alerts
+    rules:
+    - alert: ConsulMeshHighErrorRate
+      expr: consul:mesh:error_rate > 0.05
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: High error rate in service mesh traffic
+        description: Service {{ $labels.consul_source_service }} to {{ $labels.consul_destination_service }} has >5% error rate
+
+    - alert: ConsulMeshHighLatency
+      expr: consul:mesh:latency_p95 > 500
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: High latency in service mesh
+        description: P95 latency from {{ $labels.consul_source_service }} to {{ $labels.consul_destination_service }} is >500ms
+
+    - alert: ConsulCrossRegionErrors
+      expr: |
+        sum(rate(envoy_cluster_upstream_rq_xx{response_code_class="5"}[5m])) by (consul_source_datacenter, consul_destination_datacenter)
+        /
+        sum(rate(envoy_cluster_upstream_rq_total[5m])) by (consul_source_datacenter, consul_destination_datacenter) > 0.05
+      for: 5m
+      labels:
+        severity: critical
+      annotations:
+        summary: High cross-region error rate
+        description: Cross-region traffic from {{ $labels.consul_source_datacenter }} to {{ $labels.consul_destination_datacenter }} has >5% error rate
+
+    - alert: ConsulMeshCircuitBreaker
+      expr: envoy_cluster_circuit_breakers_default_rq_open > 0
+      for: 1m
+      labels:
+        severity: warning
+      annotations:
+        summary: Circuit breaker opened
+        description: Circuit breaker opened for {{ $labels.consul_destination_service }}

@@ -1,0 +1,145 @@
+global:
+  name: consul
+  datacenter: ${datacenter}
+  image: "hashicorp/consul:1.16.0"
+  enableConsulNamespaces: true
+  tls:
+    enabled: true
+    enableAutoEncrypt: true
+    verify: true
+  acls:
+    manageSystemACLs: true
+    createReplicationToken: true
+  federation:
+    enabled: true
+    createFederationSecret: ${is_primary}
+    primaryDatacenter: "primary"
+
+server:
+  replicas: 3
+  bootstrapExpect: 3
+  extraConfig: |
+    {
+      "primary_datacenter": "primary",
+      "primary_gateways": ${primary_gateways},
+      "connect": {
+        "enabled": true,
+        "enable_mesh_gateway_wan_federation": true
+      },
+      "auto_reload_config": true,
+      "retry_join_wan": ${retry_join_wan}
+    }
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: consul
+              component: server
+          topologyKey: kubernetes.io/hostname
+  resources:
+    requests:
+      memory: "4Gi"
+      cpu: "2000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4000m"
+  storage:
+    enabled: true
+    storageClass: "gp3"
+    size: 50Gi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    fsGroup: 1000
+
+meshGateway:
+  enabled: true
+  replicas: 2
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchLabels:
+              app: consul
+              component: mesh-gateway
+          topologyKey: kubernetes.io/hostname
+
+connectInject:
+  enabled: true
+  default: true
+  transparentProxy:
+    defaultEnabled: true
+  metrics:
+    defaultEnabled: true
+    enableGatewayMetrics: true
+    defaultEnableMerging: true
+    defaultPrometheusScrapePort: 20100
+    defaultPrometheusScrapePath: "/metrics"
+
+prometheus:
+  enabled: true
+  alerting:
+    enabled: true
+    alertmanagers:
+      - static_configs:
+          - targets:
+              - "alertmanager.monitoring.svc:9093"
+  rules:
+    - name: consul-rules
+      rules:
+        - alert: ConsulServerDown
+          expr: up{job="consul-server"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Consul server down"
+            description: "Consul server has been down for more than 5 minutes"
+        - alert: ConsulHighCPU
+          expr: rate(process_cpu_seconds_total{job="consul-server"}[5m]) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High CPU usage on Consul server"
+            description: "Consul server CPU usage is above 80% for more than 10 minutes"
+
+ui:
+  enabled: true
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: nlb
+      service.beta.kubernetes.io/aws-load-balancer-internal: "true"
+
+controller:
+  enabled: true
+
+dns:
+  enabled: true
+  enableRedirection: true
+  
+client:
+  enabled: true
+  grpc: true
+  exposeGossipPorts: true
+  join: ${retry_join}
+  resources:
+    requests:
+      memory: "100Mi"
+      cpu: "100m"
+    limits:
+      memory: "200Mi"
+      cpu: "200m"

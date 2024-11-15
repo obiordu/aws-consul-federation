@@ -1,0 +1,134 @@
+alertmanager:
+  enabled: true
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'datacenter', 'service']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: 'pagerduty'
+      routes:
+        - match:
+            severity: critical
+          receiver: 'pagerduty'
+          continue: true
+        - match:
+            severity: warning
+          receiver: 'slack'
+          continue: true
+    receivers:
+      - name: 'pagerduty'
+        pagerduty_configs:
+          - service_key: ${pagerduty_key}
+            send_resolved: true
+      - name: 'slack'
+        slack_configs:
+          - api_url: ${slack_webhook}
+            channel: '#consul-alerts'
+            send_resolved: true
+
+grafana:
+  enabled: true
+  adminPassword: ${grafana_password}
+  persistence:
+    enabled: true
+    size: 10Gi
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'consul'
+          orgId: 1
+          folder: 'Consul'
+          type: file
+          disableDeletion: true
+          editable: false
+          options:
+            path: /var/lib/grafana/dashboards/consul
+  dashboards:
+    consul:
+      consul-overview:
+        file: dashboards/consul-overview.json
+      consul-services:
+        file: dashboards/consul-services.json
+      consul-mesh:
+        file: dashboards/consul-mesh.json
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: ALL
+
+prometheus:
+  enabled: true
+  server:
+    retention: 15d
+    persistentVolume:
+      size: 50Gi
+  serverFiles:
+    prometheus.yml:
+      scrape_configs:
+        - job_name: 'consul-server'
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_label_component]
+              regex: server
+              action: keep
+            - source_labels: [__meta_kubernetes_pod_label_app]
+              regex: consul
+              action: keep
+        - job_name: 'consul-mesh-gateway'
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_label_component]
+              regex: mesh-gateway
+              action: keep
+        - job_name: 'consul-services'
+          kubernetes_sd_configs:
+            - role: pod
+          relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              action: keep
+              regex: true
+  alertmanager:
+    enabled: true
+    persistentVolume:
+      size: 10Gi
+  pushgateway:
+    enabled: true
+
+loki:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 50Gi
+  config:
+    limits_config:
+      retention_period: 168h
+    schema_config:
+      configs:
+        - from: 2023-01-01
+          store: boltdb-shipper
+          object_store: s3
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+    storage_config:
+      aws:
+        s3: s3://${region}/${bucket_name}
+        region: ${region}
+    ruler:
+      storage:
+        type: local
+        local:
+          directory: /rules
+      rule_path: /tmp/rules
+      alertmanager_url: http://prometheus-alertmanager:9093
+      ring:
+        kvstore:
+          store: inmemory
+      enable_api: true

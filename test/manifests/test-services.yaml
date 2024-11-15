@@ -1,0 +1,198 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: test-client
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: test-service
+spec:
+  selector:
+    app: test-service
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: test-service
+  template:
+    metadata:
+      labels:
+        app: test-service
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+    spec:
+      containers:
+        - name: test-service
+          image: nginx:1.21
+          ports:
+            - containerPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-client
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: test-client
+  template:
+    metadata:
+      labels:
+        app: test-client
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+    spec:
+      serviceAccountName: test-client
+      containers:
+        - name: test-client
+          image: curlimages/curl:7.85.0
+          command: ["sleep", "infinity"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: consul-test
+  annotations:
+    consul.hashicorp.com/connect-inject: "true"
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: consul-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/connect-service-upstreams: "backend:9090"
+    spec:
+      containers:
+        - name: frontend
+          image: nicholasjackson/fake-service:v0.21.0
+          env:
+            - name: LISTEN_ADDR
+              value: "0.0.0.0:8080"
+            - name: UPSTREAM_URIS
+              value: "http://localhost:9090"
+            - name: NAME
+              value: "frontend"
+            - name: MESSAGE
+              value: "Hello from Frontend"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: consul-test
+  annotations:
+    consul.hashicorp.com/connect-inject: "true"
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 80
+      targetPort: 9090
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: consul-test
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+      annotations:
+        consul.hashicorp.com/connect-inject: "true"
+        consul.hashicorp.com/service-tags: "v1"
+        consul.hashicorp.com/service-meta-version: "1.0"
+    spec:
+      containers:
+        - name: backend
+          image: nicholasjackson/fake-service:v0.21.0
+          env:
+            - name: LISTEN_ADDR
+              value: "0.0.0.0:9090"
+            - name: NAME
+              value: "backend"
+            - name: MESSAGE
+              value: "Hello from Backend"
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: backend
+  namespace: consul-test
+spec:
+  protocol: "http"
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceDefaults
+metadata:
+  name: frontend
+  namespace: consul-test
+spec:
+  protocol: "http"
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceIntentions
+metadata:
+  name: frontend-to-backend
+  namespace: consul-test
+spec:
+  destination:
+    name: backend
+  sources:
+    - name: frontend
+      action: allow
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceResolver
+metadata:
+  name: backend
+  namespace: consul-test
+spec:
+  defaultSubset: v1
+  subsets:
+    v1:
+      filter: "Service.Tags contains v1"
+---
+apiVersion: consul.hashicorp.com/v1alpha1
+kind: ServiceSplitter
+metadata:
+  name: backend
+  namespace: consul-test
+spec:
+  splits:
+    - weight: 100
+      serviceSubset: v1

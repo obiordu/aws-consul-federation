@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: consul-backup
+spec:
+  schedule: "0 */6 * * *"  # Every 6 hours
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: consul-backup
+          containers:
+          - name: consul-backup
+            image: consul:1.16.0
+            command:
+            - /bin/sh
+            - -c
+            - |
+              # Wait for Consul to be ready
+              until consul members; do
+                sleep 5
+              done
+              
+              # Create snapshot with timestamp
+              TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+              consul snapshot save /backups/consul-snapshot-$TIMESTAMP.snap
+              
+              # Upload to S3
+              aws s3 cp /backups/consul-snapshot-$TIMESTAMP.snap s3://${BACKUP_BUCKET}/consul-snapshots/$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)/consul-snapshot-$TIMESTAMP.snap
+              
+              # Cleanup old snapshots (keep last 5)
+              cd /backups && ls -t consul-snapshot-*.snap | tail -n +6 | xargs -r rm
+            env:
+            - name: CONSUL_HTTP_ADDR
+              value: "https://consul-server:8501"
+            - name: CONSUL_CACERT
+              value: "/consul/tls/ca/tls.crt"
+            - name: CONSUL_CLIENT_CERT
+              value: "/consul/tls/client/tls.crt"
+            - name: CONSUL_CLIENT_KEY
+              value: "/consul/tls/client/tls.key"
+            - name: BACKUP_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: consul-backup-config
+                  key: bucket_name
+            volumeMounts:
+            - name: consul-tls
+              mountPath: /consul/tls
+              readOnly: true
+            - name: backups
+              mountPath: /backups
+          volumes:
+          - name: consul-tls
+            secret:
+              secretName: consul-server-tls
+          - name: backups
+            emptyDir: {}
+          restartPolicy: OnFailure
