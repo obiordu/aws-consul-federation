@@ -1,10 +1,9 @@
 # Technology Stack
 
 ## Core Languages
-- Python 3.8+ (Primary language for all components)
 - HCL (HashiCorp Configuration Language)
+- Shell scripting (Bash)
 - YAML
-- Shell scripting (Bash/PowerShell)
 
 ## Infrastructure as Code
 - Terraform >= 1.5.0
@@ -23,6 +22,7 @@
 - Envoy Proxy
 
 ## Cloud Platform (AWS)
+### Core Services
 - EKS (Elastic Kubernetes Service)
 - EC2
 - VPC
@@ -32,66 +32,66 @@
 - Route53
 - ACM (AWS Certificate Manager)
 
-## Python Packages
-### Core Dependencies
-```
-boto3==1.29.3          # AWS SDK
-kubernetes==28.1.0     # Kubernetes API
-python-consul2==0.1.5  # Consul API
-pyyaml==6.0.1         # YAML parsing
-requests==2.31.0       # HTTP client
-cryptography==41.0.5   # TLS/encryption
-aiohttp==3.9.1        # Async HTTP client
-tenacity==8.2.3       # Retries and backoff
-structlog==23.2.0     # Structured logging
-```
+### Networking
+- Transit Gateway
+- VPC Peering
+- Network Load Balancer
+- Security Groups
+- NACLs
 
-### Testing Dependencies
-```
-pytest==7.4.3         # Testing framework
-pytest-timeout==2.2.0 # Test timeouts
-pytest-xdist==3.3.1   # Parallel testing
-pytest-env==1.0.1     # Environment variables
-pytest-asyncio==0.21.1 # Async test support
-pytest-cov==4.1.0     # Coverage reporting
-```
-
-### Development Dependencies
-```
-black==23.11.0        # Code formatting
-isort==5.12.0        # Import sorting
-flake8==6.1.0        # Linting
-mypy==1.7.0          # Type checking
-pre-commit==3.5.0    # Git hooks
-```
-
+## Testing Framework
 ### Infrastructure Testing
-```
-moto==4.2.7          # AWS service mocking
-responses==0.24.1    # HTTP mocking
-pytest-kubernetes==0.3.0  # K8s testing utilities
-```
+- Terraform native testing (tftest.hcl)
+- Shell script integration tests
+- AWS CloudWatch Synthetics
+
+### Security Testing
+- AWS Config Rules
+- AWS Security Hub
+- IAM Access Analyzer
 
 ## Monitoring & Observability
 - Prometheus
+  - Node Exporter
+  - Alert Manager
 - Grafana
+  - Loki
+  - Tempo
 - AWS CloudWatch
+  - Container Insights
+  - Log Insights
 - Consul UI
 
-## Security Tools
+## Security Components
 - AWS KMS
-- TLS/SSL Certificates
+- AWS Secrets Manager
+- TLS/SSL Certificates (ACM)
 - IAM Roles & Policies
 - Network Policies
 - Security Groups
 - NACLs
+- AWS WAF
+- AWS Shield
 
-## CI/CD
+## Backup & Recovery
+- AWS Backup
+- S3 Cross-Region Replication
+- Consul Snapshots
+- EKS Backup Controller
+
+## CI/CD & Version Control
 - GitHub Actions
+- Git
 - AWS CodeBuild
 - Docker Hub
 
 ## Documentation
 - Markdown
-- PlantUML (Architecture diagrams)
-- Swagger/OpenAPI (API documentation)
+- Draw.io (Architecture diagrams)
+- Terraform documentation
+- AWS Well-Architected Framework
+
+## Cost Management
+- AWS Cost Explorer
+- AWS Budgets
+- AWS Cost and Usage Report
