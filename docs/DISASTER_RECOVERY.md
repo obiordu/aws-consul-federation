@@ -4,6 +4,29 @@
 
 This document outlines disaster recovery procedures for the multi-region Consul federation deployment. The environment spans two AWS regions (Oregon and Virginia) with automated backup, restore, and failover capabilities.
 
+## Architecture
+
+```mermaid
+graph TB
+    subgraph "Primary DC (Oregon)"
+        CP[Consul Primary]
+        BP[Backup Job]
+        S1[S3 Bucket]
+    end
+    
+    subgraph "Secondary DC (Virginia)"
+        CS[Consul Secondary]
+        BS[Backup Job]
+        S2[S3 Bucket]
+    end
+    
+    CP --> BP
+    BP --> S1
+    CS --> BS
+    BS --> S2
+    S1 <--> S2
+```
+
 ## Backup Strategy
 
 ### Automated Backups
@@ -14,15 +37,13 @@ This document outlines disaster recovery procedures for the multi-region Consul 
 - **Encryption**: Server-side encryption with AWS KMS
 - **Verification**: Automated backup testing daily
 
-### Backup Locations
+### Backup Contents
 
-- Primary Region (Oregon):
-  - S3 Bucket: `${var.environment}-consul-backups-us-west-2`
-  - Path: `consul-snapshots/<namespace>/consul-snapshot-<timestamp>.snap`
-
-- Secondary Region (Virginia):
-  - S3 Bucket: `${var.environment}-consul-backups-us-east-1`
-  - Path: `consul-snapshots/<namespace>/consul-snapshot-<timestamp>.snap`
+- Consul KV store
+- ACL configurations
+- Service definitions
+- Intention rules
+- TLS certificates
 
 ## Recovery Procedures
 
@@ -173,3 +194,58 @@ consul kv get -datacenter=dc2 test/replication
 # 3. Check replication metrics
 curl -s http://localhost:8500/v1/agent/metrics
 ```
+
+## Prevention Measures
+
+### 1. Infrastructure
+
+- Multi-AZ deployment
+- Auto-scaling groups
+- Health checks
+- Load balancing
+
+### 2. Data Protection
+
+- Regular backups
+- Data validation
+- Corruption detection
+- Version control
+
+## Documentation
+
+### 1. Required Information
+
+- AWS credentials
+- Backup locations
+- Contact information
+- Escalation procedures
+
+### 2. Recovery Logs
+
+- Date and time
+- Actions taken
+- Results
+- Lessons learned
+
+## Testing Schedule
+
+### Monthly Tests
+
+- [ ] Backup restoration
+- [ ] Node failure recovery
+- [ ] Service failover
+- [ ] Data validation
+
+### Quarterly Tests
+
+- [ ] Full DC failover
+- [ ] Cross-region recovery
+- [ ] Network partition
+- [ ] Load testing
+
+## References
+
+- [Consul Backup Guide](https://www.consul.io/docs/commands/snapshot)
+- [AWS Disaster Recovery](https://aws.amazon.com/disaster-recovery/)
+- [EKS Best Practices](https://aws.github.io/aws-eks-best-practices/)
+- [Kubernetes StatefulSets](https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/)

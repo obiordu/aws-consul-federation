@@ -1,248 +1,367 @@
 # Troubleshooting Guide
 
-## Common Issues and Solutions
+This guide helps diagnose and resolve common issues in the AWS Multi-Region Consul Federation infrastructure.
 
-### 1. Deployment Issues
+## Quick Diagnostics
 
-#### EKS Cluster Creation Fails
-```
-Problem: EKS cluster creation times out or fails
-Solution:
-1. Check IAM permissions
-2. Verify VPC subnet configuration
-3. Ensure service-linked role exists
-```
+### 1. Infrastructure Health Check
 
-#### Consul Server Pod Crashes
-```
-Problem: Consul server pods fail to start or crash
-Solution:
-1. Check resource limits
-2. Verify storage class exists
-3. Review pod logs: kubectl logs -n consul <pod-name>
-4. Ensure gossip key is properly set
-```
-
-#### TLS Certificate Issues
-```
-Problem: Services fail to communicate due to TLS errors
-Solution:
-1. Verify ACM certificate status
-2. Check Consul CA configuration
-3. Ensure service accounts have proper annotations
-4. Review certificate expiration dates
-```
-
-### 2. Federation Issues
-
-#### Mesh Gateway Connection Failures
-```
-Problem: Services cannot communicate across regions
-Solution:
-1. Check mesh gateway logs
-2. Verify VPC peering status
-3. Test network connectivity
-4. Review security group rules
-```
-
-#### Service Discovery Issues
-```
-Problem: Services cannot discover peers in other regions
-Solution:
-1. Verify WAN federation setup
-2. Check DNS configuration
-3. Test Route53 health checks
-4. Review service registration
-```
-
-### 3. Performance Issues
-
-#### High Latency
-```
-Problem: Cross-region requests have high latency
-Solution:
-1. Monitor network metrics
-2. Check resource utilization
-3. Review connection pooling
-4. Optimize service placement
-```
-
-#### Resource Constraints
-```
-Problem: Nodes or pods show resource pressure
-Solution:
-1. Review resource requests/limits
-2. Check node autoscaling
-3. Monitor pod evictions
-4. Adjust HPA settings
-```
-
-### 4. Monitoring Issues
-
-#### Missing Metrics
-```
-Problem: Prometheus is not collecting all metrics
-Solution:
-1. Check service monitor configuration
-2. Verify endpoint annotations
-3. Review scrape configs
-4. Check Prometheus resources
-```
-
-#### Alert Storm
-```
-Problem: Too many alerts firing simultaneously
-Solution:
-1. Review alert thresholds
-2. Check alert grouping
-3. Adjust alert timing
-4. Implement alert suppression
-```
-
-### 5. Backup/Restore Issues
-
-#### Backup Failure
-```
-Problem: Automated backups are failing
-Solution:
-1. Check S3 permissions
-2. Verify snapshot API access
-3. Review backup script logs
-4. Check encryption keys
-```
-
-#### Restore Failure
-```
-Problem: Restore operation fails
-Solution:
-1. Verify backup integrity
-2. Check restore permissions
-3. Review cluster state
-4. Ensure version compatibility
-```
-
-## Diagnostic Commands
-
-### Kubernetes
 ```bash
-# Check pod status
-kubectl get pods -n consul
-
-# View pod logs
-kubectl logs -n consul <pod-name>
-
-# Check events
-kubectl get events -n consul
-
-# Describe resource
-kubectl describe <resource-type> <resource-name> -n consul
-```
-
-### Consul
-```bash
-# Check member status
-consul members -wan
-
-# View service catalog
-consul catalog services
-
-# Check ACL status
-consul acl token list
-
-# Verify TLS
-consul tls verify
-```
-
-### AWS
-```bash
-# Check VPC peering
-aws ec2 describe-vpc-peering-connections
-
-# View Route53 health checks
-aws route53 list-health-checks
-
-# Check EKS status
-aws eks describe-cluster --name <cluster-name>
-
-# View ACM certificates
-aws acm list-certificates
-```
-
-## Health Check Script
-```bash
-#!/bin/bash
-
-check_component() {
-    component=$1
-    command=$2
-    
-    echo "Checking $component..."
-    if eval "$command"; then
-        echo "✅ $component is healthy"
-    else
-        echo "❌ $component check failed"
-        return 1
-    fi
-}
-
 # Check EKS clusters
-check_component "EKS Primary" "aws eks describe-cluster --name primary"
-check_component "EKS Secondary" "aws eks describe-cluster --name secondary"
+aws eks describe-cluster --name consul-federation-primary --region us-west-2
+aws eks describe-cluster --name consul-federation-secondary --region us-east-1
 
 # Check Consul servers
-check_component "Consul Primary" "kubectl get pods -n consul -l component=server"
-check_component "Consul Secondary" "kubectl get pods -n consul -l component=server --context secondary"
+kubectl get pods -n consul
+kubectl exec -it consul-server-0 -n consul -- consul members
 
-# Check mesh gateways
-check_component "Mesh Gateway Primary" "kubectl get pods -n consul -l component=mesh-gateway"
-check_component "Mesh Gateway Secondary" "kubectl get pods -n consul -l component=mesh-gateway --context secondary"
-
-# Check monitoring
-check_component "Prometheus" "kubectl get pods -n monitoring -l app=prometheus"
-check_component "Grafana" "kubectl get pods -n monitoring -l app=grafana"
+# Check federation status
+kubectl exec -it consul-server-0 -n consul -- consul members -wan
 ```
 
-## Recovery Procedures
+### 2. Common Status Codes
 
-### Full Region Failure
-1. Verify region health status
-2. Trigger Route53 failover
-3. Scale up secondary region
-4. Update DNS records
-5. Verify service health
-6. Monitor recovery metrics
+| Status | Description | Action |
+|--------|-------------|--------|
+| 500 | Internal Server Error | Check Consul server logs |
+| 503 | Service Unavailable | Verify service mesh status |
+| 403 | Forbidden | Check ACL tokens |
+| 429 | Too Many Requests | Review rate limits |
 
-### Consul Server Recovery
-1. Stop affected servers
-2. Restore from backup
-3. Join WAN federation
-4. Verify replication
-5. Update service configs
-6. Monitor cluster health
+## Common Issues
 
-### Data Corruption Recovery
-1. Identify corruption scope
-2. Stop affected services
-3. Restore from last known good backup
-4. Verify data integrity
-5. Resume service operations
-6. Update monitoring alerts
+### 1. EKS Cluster Creation Fails
 
-## Support Information
+**Symptoms**:
+- Terraform apply fails during EKS creation
+- AWS API errors
+- Timeout errors
 
-### Logging Locations
-- Consul Servers: `/consul/data/server.log`
-- Mesh Gateways: `/consul/data/mesh-gateway.log`
-- Prometheus: `/prometheus/data/`
-- Application Logs: CloudWatch Logs
+**Solutions**:
+1. Check AWS quotas:
+   ```bash
+   aws service-quotas get-service-quota \
+     --service-code eks \
+     --quota-code L-1194D53C
+   ```
 
-### Metrics Endpoints
-- Consul Metrics: `:8500/v1/agent/metrics`
-- Mesh Gateway: `:19000/stats`
-- Prometheus: `:9090/metrics`
-- Custom Metrics: `:8080/metrics`
+2. Verify IAM permissions
+3. Check VPC subnet availability
+4. Review security group rules
 
-### Support Contacts
-- Infrastructure Team: infrastructure@company.com
-- Security Team: security@company.com
-- On-Call: +1-xxx-xxx-xxxx
+### 2. Consul Server Issues
+
+**Symptoms**:
+- Pods in CrashLoopBackOff
+- Leadership election problems
+- Replication delays
+
+**Solutions**:
+1. Check logs:
+   ```bash
+   kubectl logs consul-server-0 -n consul
+   ```
+
+2. Verify configuration:
+   ```bash
+   kubectl describe configmap consul-server-config -n consul
+   ```
+
+3. Check resources:
+   ```bash
+   kubectl top pods -n consul
+   ```
+
+### 3. Federation Problems
+
+**Symptoms**:
+- WAN gossip failures
+- Cross-DC service discovery issues
+- Replication delays
+
+**Solutions**:
+1. Check WAN status:
+   ```bash
+   kubectl exec consul-server-0 -n consul -- consul operator raft list-peers
+   ```
+
+2. Verify network connectivity:
+   ```bash
+   kubectl exec consul-server-0 -n consul -- nc -zv consul-server.dc2.consul 8302
+   ```
+
+3. Review TLS certificates:
+   ```bash
+   kubectl exec consul-server-0 -n consul -- consul tls cert-info
+   ```
+
+### 4. Service Mesh Issues
+
+**Symptoms**:
+- Service discovery failures
+- mTLS errors
+- Proxy injection failures
+
+**Solutions**:
+1. Check Envoy status:
+   ```bash
+   kubectl logs <pod-name> -c consul-dataplane -n <namespace>
+   ```
+
+2. Verify intentions:
+   ```bash
+   kubectl exec -it consul-server-0 -n consul -- consul intention list
+   ```
+
+3. Test connectivity:
+   ```bash
+   kubectl exec -it <pod-name> -n <namespace> -- curl localhost:19000/clusters
+   ```
+
+## Monitoring Issues
+
+### 1. Prometheus Problems
+
+**Symptoms**:
+- Missing metrics
+- Scrape failures
+- High cardinality alerts
+
+**Solutions**:
+1. Check Prometheus status:
+   ```bash
+   kubectl get pods -n monitoring
+   kubectl logs prometheus-server-0 -n monitoring
+   ```
+
+2. Verify service discovery:
+   ```bash
+   kubectl get servicemonitors -A
+   ```
+
+3. Review storage:
+   ```bash
+   kubectl get pvc -n monitoring
+   ```
+
+### 2. Grafana Issues
+
+**Symptoms**:
+- Dashboard loading failures
+- Authentication problems
+- Data source errors
+
+**Solutions**:
+1. Check Grafana logs:
+   ```bash
+   kubectl logs grafana-0 -n monitoring
+   ```
+
+2. Verify data sources:
+   ```bash
+   kubectl get secrets -n monitoring | grep grafana
+   ```
+
+3. Test Prometheus connection:
+   ```bash
+   curl -I http://prometheus-server.monitoring:9090/api/v1/query
+   ```
+
+## Backup/Restore Issues
+
+### 1. Backup Failures
+
+**Symptoms**:
+- Failed backup jobs
+- Incomplete snapshots
+- S3 upload errors
+
+**Solutions**:
+1. Check backup logs:
+   ```bash
+   kubectl logs backup-job-xxxxx -n consul
+   ```
+
+2. Verify S3 access:
+   ```bash
+   aws s3 ls s3://consul-backups-bucket/
+   ```
+
+3. Test IAM permissions:
+   ```bash
+   aws sts get-caller-identity
+   ```
+
+### 2. Restore Problems
+
+**Symptoms**:
+- Restore job failures
+- Data inconsistency
+- ACL token issues
+
+**Solutions**:
+1. Check restore logs:
+   ```bash
+   kubectl logs restore-job-xxxxx -n consul
+   ```
+
+2. Verify snapshot:
+   ```bash
+   consul snapshot inspect backup.snap
+   ```
+
+3. Test restore locally:
+   ```bash
+   consul snapshot restore -http-addr=https://localhost:8500 backup.snap
+   ```
+
+## Performance Issues
+
+### 1. High Latency
+
+**Symptoms**:
+- Slow service responses
+- Increased error rates
+- Timeout errors
+
+**Solutions**:
+1. Check resource usage:
+   ```bash
+   kubectl top pods -n consul
+   ```
+
+2. Monitor network metrics:
+   ```bash
+   kubectl exec consul-server-0 -n consul -- consul monitor
+   ```
+
+3. Review Envoy statistics:
+   ```bash
+   curl localhost:19000/stats
+   ```
+
+### 2. Memory Problems
+
+**Symptoms**:
+- OOMKilled pods
+- High memory usage
+- Slow performance
+
+**Solutions**:
+1. Check memory usage:
+   ```bash
+   kubectl describe node <node-name>
+   ```
+
+2. Review limits:
+   ```bash
+   kubectl describe pod <pod-name> -n consul
+   ```
+
+3. Adjust resources:
+   ```bash
+   kubectl edit statefulset consul-server -n consul
+   ```
+
+## Security Issues
+
+### 1. TLS Problems
+
+**Symptoms**:
+- Certificate errors
+- Connection refused
+- Handshake failures
+
+**Solutions**:
+1. Check certificate validity:
+   ```bash
+   consul tls cert-info -ca-file ca.pem
+   ```
+
+2. Verify trust chain:
+   ```bash
+   openssl verify -CAfile ca.pem cert.pem
+   ```
+
+3. Test TLS connection:
+   ```bash
+   openssl s_client -connect consul-server:8501
+   ```
+
+### 2. ACL Issues
+
+**Symptoms**:
+- Permission denied
+- Token errors
+- Access problems
+
+**Solutions**:
+1. Check token validity:
+   ```bash
+   consul acl token read -id <token-id>
+   ```
+
+2. Review policies:
+   ```bash
+   consul acl policy list
+   ```
+
+3. Test permissions:
+   ```bash
+   consul acl token update -id <token-id> -policy-name <policy>
+   ```
+
+## Network Issues
+
+### 1. DNS Problems
+
+**Symptoms**:
+- Service discovery failures
+- Name resolution errors
+- CoreDNS issues
+
+**Solutions**:
+1. Check CoreDNS:
+   ```bash
+   kubectl logs -n kube-system -l k8s-app=kube-dns
+   ```
+
+2. Test DNS resolution:
+   ```bash
+   kubectl run -it --rm debug --image=busybox -- nslookup consul-server.consul
+   ```
+
+3. Verify DNS policy:
+   ```bash
+   kubectl describe configmap coredns -n kube-system
+   ```
+
+### 2. Connectivity Issues
+
+**Symptoms**:
+- Network timeouts
+- Connection refused
+- Routing problems
+
+**Solutions**:
+1. Check network policies:
+   ```bash
+   kubectl get networkpolicies -A
+   ```
+
+2. Test connectivity:
+   ```bash
+   kubectl exec -it <pod> -- nc -zv <service> <port>
+   ```
+
+3. Review VPC peering:
+   ```bash
+   aws ec2 describe-vpc-peering-connections
+   ```
+
+## References
+
+- [Consul Troubleshooting](https://www.consul.io/docs/troubleshoot)
+- [EKS Troubleshooting](https://docs.aws.amazon.com/eks/latest/userguide/troubleshooting.html)
+- [Kubernetes Debugging](https://kubernetes.io/docs/tasks/debug-application-cluster/debug-application/)
+- [Envoy Debug](https://www.envoyproxy.io/docs/envoy/latest/operations/admin)

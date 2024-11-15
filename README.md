@@ -2,6 +2,29 @@
 
 This repository contains Terraform configurations and Kubernetes manifests for deploying a production-grade, WAN-federated Consul cluster across multiple AWS regions.
 
+## Architecture Overview
+```mermaid
+graph TB
+    subgraph "US-West-2 (Oregon)"
+        VPC1[VPC 10.0.0.0/16]
+        EKS1[EKS Cluster]
+        CONSUL1[Consul Primary]
+        PROM1[Prometheus]
+    end
+    
+    subgraph "US-East-1 (Virginia)"
+        VPC2[VPC 10.1.0.0/16]
+        EKS2[EKS Cluster]
+        CONSUL2[Consul Secondary]
+        PROM2[Prometheus]
+    end
+    
+    VPC1 --- VPC2
+    CONSUL1 --- CONSUL2
+    PROM1 --- GRAFANA[Grafana]
+    PROM2 --- GRAFANA
+```
+
 ## Version Requirements
 
 - Terraform >= 1.5.0
@@ -11,38 +34,90 @@ This repository contains Terraform configurations and Kubernetes manifests for d
 - Consul Enterprise >= 1.16.0
 - Kubernetes >= 1.25.0
 
-## Architecture Overview
+## Prerequisites
 
-This infrastructure deploys a secure, highly available Consul federation across two AWS regions:
-- Primary Datacenter: US-West-2 (Oregon)
-- Secondary Datacenter: US-East-1 (Virginia)
+- AWS Account with appropriate permissions
+- AWS CLI configured
+- Terraform >= 1.5.0
+- kubectl >= 1.25.0
+- helm >= 3.0.0
 
-### Key Components
+## Quick Start
 
-1. **Infrastructure Layer**
-   - VPC and Networking (one per region)
-   - EKS Clusters
-   - IAM Roles and Policies
-   - Security Groups and NACLs
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/aws-consul-federation.git
+cd aws-consul-federation
+```
 
-2. **Consul Federation**
-   - WAN Federation Configuration
-   - TLS/mTLS Security
-   - Gossip Encryption
-   - ACL System
-   - Service Mesh Configuration
+2. Configure AWS credentials:
+```bash
+aws configure
+```
 
-3. **Security Features**
-   - AWS KMS Integration
-   - TLS Certificate Management
-   - Network Segmentation
-   - Zero-trust Network Policies
+3. Initialize Terraform:
+```bash
+terraform init
+```
 
-4. **Observability Stack**
-   - Prometheus Monitoring
-   - Grafana Dashboards
-   - Alert Management
-   - Logging Infrastructure
+4. Copy and modify the example variables:
+```bash
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+```
+
+5. Deploy the infrastructure:
+```bash
+terraform plan
+terraform apply
+```
+
+## Security Features
+
+- TLS encryption for all communication
+- mTLS for service-to-service communication
+- Gossip encryption for cluster communication
+- AWS KMS for key management
+- Network policies for pod-to-pod communication
+- IAM roles with least privilege access
+
+## Disaster Recovery
+
+- Automated backups every 6 hours
+- Cross-region snapshot replication
+- Automated failover capabilities
+- Regular health checks
+- See [docs/DISASTER_RECOVERY.md](docs/DISASTER_RECOVERY.md) for details
+
+## Monitoring
+
+- Prometheus metrics collection
+- Grafana dashboards
+- AlertManager configuration
+- Cross-region metric aggregation
+- See [docs/MONITORING.md](docs/MONITORING.md) for details
+
+## Cost Considerations
+
+Estimated monthly costs (USD):
+- EKS Clusters: $146 ($73 per cluster)
+- EC2 Instances: $140-280 (depending on size/count)
+- Load Balancers: $40
+- Data Transfer: $50-100
+- S3 Storage: $5-10
+Total: ~$400-600/month
+
+## Documentation
+
+- [Setup Guide](docs/SETUP.md)
+- [Architecture Details](docs/ARCHITECTURE.md)
+- [Security Guide](docs/SECURITY.md)
+- [Monitoring Guide](docs/MONITORING.md)
+- [Disaster Recovery](docs/DISASTER_RECOVERY.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+- [Contributing](docs/CONTRIBUTING.md)
+- [Upgrade Guide](docs/UPGRADE.md)
+- [FAQ](docs/FAQ.md)
 
 ## Repository Structure
 
@@ -63,60 +138,6 @@ This infrastructure deploys a secure, highly available Consul federation across 
 └── versions.tf               # Version constraints
 ```
 
-## Prerequisites
-
-1. AWS Account with appropriate permissions
-2. Terraform installed locally
-3. kubectl configured
-4. AWS CLI configured
-5. GitHub account for CI/CD
-
-## Getting Started
-
-1. Clone this repository
-2. Configure AWS credentials
-3. Initialize Terraform:
-   ```bash
-   terraform init
-   ```
-4. Review and modify variables in `environments/<region>/terraform.tfvars`
-5. Deploy the infrastructure:
-   ```bash
-   terraform plan
-   terraform apply
-   ```
-
-## Security Features
-
-- End-to-end TLS encryption
-- Gossip encryption for Consul
-- AWS KMS for key management
-- Network isolation
-- Zero-trust network policies
-- Regular security scanning in CI/CD
-
-## Disaster Recovery
-
-- Automated backups
-- Cross-region failover
-- Data replication
-- Recovery procedures documented in `/docs/disaster-recovery.md`
-
-## Monitoring and Alerting
-
-- Prometheus metrics
-- Grafana dashboards
-- Alert configurations
-- Log aggregation
-
-## CI/CD Pipeline
-
-The repository includes GitHub Actions workflows for:
-- Terraform validation
-- Security scanning (tfsec)
-- Infrastructure testing
-- Automated deployments
-
 ## Contributing
 
 1. Fork the repository
@@ -126,8 +147,8 @@ The repository includes GitHub Actions workflows for:
 
 ## License
 
-MIT License
+MIT License - See [LICENSE](LICENSE) for details
 
 ## Support
 
-For issues and feature requests, please create a GitHub issue.
+For issues and feature requests, please open an issue in the GitHub repository.
